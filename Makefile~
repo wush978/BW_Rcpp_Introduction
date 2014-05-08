@@ -1,0 +1,7 @@
+all : index.html Introduction.html
+
+index.html : index.md
+	pandoc 
+
+%.html : %.Rmd
+	Rscript -e "library(slidify);slidify('$<')"

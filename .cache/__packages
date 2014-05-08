@@ -1,0 +1,7 @@
+base
+knitr
+rbenchmark
+Rcpp
+reshape2
+slidify
+xtable

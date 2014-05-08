@@ -1,0 +1,689 @@
+---
+title       : Rcpp簡介
+subtitle    : 
+author      : Wush Wu
+job         : Taiwan R User Group
+framework   : io2012        # {io2012, html5slides, shower, dzslides, ...}
+highlighter : highlight.js  # {highlight.js, prettify, highlight}
+hitheme     : zenburn       # 
+widgets    : [bootstrap, quiz, shiny, interactive, mathjax]
+mode        : selfcontained # {standalone, draft}
+license: by-nc-sa
+logo: Taiwan-R-logo.png
+--- .quote .segue .nobackground .dark
+
+```{r setup, include=FALSE,echo = F, message = F, warning = F, tidy = F, cache=FALSE}
+# make this an external chunk that can be included in any file
+library(xtable)
+library(reshape2)
+library(Rcpp)
+library(knitr)
+library(methods)
+options(width = 100,digits=3)
+opts_chunk$set(message = FALSE, eval=TRUE,fig.align = "center", warning = FALSE, comment = NA, dpi = 100, fig.width=6, fig.height=4.5,tidy = FALSE, cache = FALSE, echo=TRUE)
+
+options(xtable.type = 'html')
+knit_hooks$set(inline = function(x) {
+  if(is.numeric(x)) {
+    round(x, getOption('digits'))
+  } else {
+    paste(as.character(x), collapse = ', ')
+  }
+})
+knit_hooks$set(plot = knitr:::hook_plot_html)
+```
+
+<q><span class = 'white'>Rcpp<br/>
+</br>
+讓我們能同時兼顧開發速度與執行效能
+</span></q>
+
+
+--- &vcenter .large
+
+R 是一個很棒的工具
+
+大幅縮短開發資料分析應用的時間
+
+--- .large &vcenter
+
+但是R 也常常被別人詬病效能問題
+
+--- &vcenter .large
+
+C++ 也是一個很棒的工具
+
+在效能的控制上非常突出
+
+--- &vcenter .large
+
+但是C++ 的開發難度高很多
+
+--- &vcenter .large
+
+Rcpp 
+
+讓我們在開發上，
+
+能兼用兩者的優點
+
+--- &twocol
+
+## 效能比較
+
+*** =left
+
+### R
+
+```{r effeiciency_comparison_r}
+fibonacciR <- function(n) {
+  if (n == 0) return(0)
+  if (n == 1) return(1)
+  fibonacciR(n-1) + 
+    fibonacciR(n - 2)
+}
+```
+
+*** =right
+
+### Rcpp
+
+```{r effeiciency_comparison_rcpp, engine='Rcpp', dependson="effeiciency_comparison_r"}
+#include <Rcpp.h>
+
+using namespace Rcpp;
+
+//[[Rcpp::export]]
+int fibonacciRcpp(int n) {
+  if (n == 0) return 0;
+  if (n == 1) return 1;
+  return fibonacciRcpp(n-1) + 
+    fibonacciRcpp(n-2);
+}
+```
+
+---
+
+## 直接PK了！
+
+```{r load_microbenchmark, dependson="effeiciency_comparison_rcpp"}
+library(rbenchmark)
+benchmark(
+  fibonacciR(10),
+  fibonacciRcpp(10)
+  )
+```
+
+Rcpp 快了許多倍！
+
+--- &twocol
+
+## 回頭比較一下程式碼
+
+*** =left
+
+### R
+
+```{r fibonacciR, eval=FALSE}
+fibonacciR <- function(n) {
+  if (n == 0) return(0)
+  if (n == 1) return(1)
+  fibonacciR(n-1) + 
+    fibonacciR(n - 2)
+}
+```
+
+*** =right
+
+### Rcpp
+
+```{r fibonacciRcpp, eval=FALSE, engine='Rcpp'}
+#include <Rcpp.h>
+
+using namespace Rcpp;
+
+//[[Rcpp::export]]
+int fibonacciRcpp(int n) {
+  if (n == 0) return 0;
+  if (n == 1) return 1;
+  return fibonacciRcpp(n-1) + 
+    fibonacciRcpp(n-2);
+}
+```
+
+--- &vcenter .large
+
+把剛剛右半邊的Rcpp的程式碼存到`fibonacci.cpp`
+
+--- &interactive
+
+## 短短一行...
+
+```{r opts.label = 'interactive', results = 'asis'}
+library(Rcpp)
+sourceCpp("fibonacci.cpp")
+fibonacciRcpp(10)
+```
+
+--- &vcenter .large
+
+Rcpp Attribute
+
+在註解中自動將C++函數暴露到R環境中
+
+---
+
+## Rcpp Attribute
+
+```{r rcpp_attribute, eval=FALSE, engine='Rcpp'}
+//[[Rcpp::depends(Matrix, RcppArmadillo)]]
+
+#include <Rcpp.h>
+
+using namespace Rcpp;
+
+//[[Rcpp::export]]
+```
+
+- 利用註解`/[[Rcpp::export]]`來將指定的C++函數暴露到R
+- 利用`sourceCpp`指令直接將`.cpp`的檔案匯入R
+- `Rcpp::depends`用來指定其他建置相依性
+    - `[[Rcpp::depends(Matrix, RcppArmadillo)]]`
+
+--- &vcenter .large
+
+來個Hello World吧！
+
+```{r, engine='Rcpp', eval=FALSE}
+#include <Rcpp.h>
+
+using namespace Rcpp;
+
+//[[Rcpp::export]]
+void hello() {
+  std::cout << "Hello World" << std::endl;
+}
+```
+
+--- .segue .dark
+
+## 型別轉換和基礎知識
+
+--- 
+
+## Automic 形態
+
+```{r, echo=FALSE, results='asis'}
+suppressPackageStartupMessages(library(xtable))
+mapping <- data.frame(check.names=FALSE, stringsAsFactors=FALSE,
+  c("integer", "numeric", "character", "logical", "NULL"),
+  c("int", "double", "std::string", "bool", "void"),
+  c("IntegerVector", "NumericVector", "CharacterVector", "LogicalVector", "R_NilValue"),
+  c("INTEGER", "NUMERIC", "CHAR, STRING_ELT", "LOGICAL", "R_NilValue")
+  )
+colnames(mapping) <- c("R", "C++", "Rcpp", "C API of R")
+print(xtable(mapping), type="html")
+```
+
+--- &twocol
+
+## Integer 
+
+*** =left
+
+### Rcpp
+
+```{r integerRcpp, engine='Rcpp'}
+#include <Rcpp.h>
+
+using namespace Rcpp;
+
+//[[Rcpp::export]]
+int plusRcpp(int a, int b) {
+  return a + b;
+}
+```
+
+*** =right
+
+### C API of R
+
+```{r integerC, engine='Rcpp'}
+#include <R.h>
+#include <Rdefines.h>
+
+SEXP plusC(SEXP a, SEXP b) {
+  PROTECT(a = AS_INTEGER(a));
+  PROTECT(b = AS_INTEGER(b));
+  int *pa = INTEGER_POINTER(a),
+    *pb = INTEGER_POINTER(b);
+  SEXP retval;
+  PROTECT(retval = NEW_INTEGER(1));
+  int *pretval = INTEGER_POINTER(retval); 
+  pretval[0] = pa[0] + pb[0];
+  UNPROTECT(3);
+  return retval;
+}
+```
+
+---
+
+## C的API做了什麼？
+
+- `SEXP`表示Simple EXPression，代表任何形態的R 物件
+- 需要利用`PROTECT`來告訴R 的gc對應的`SEXP`物件在使用中，不要回收
+- 結束時需要用`UNPROTECT(n)`來告訴gc，最後`n`個`PROTECT`的物件已經沒在用了
+- 利用`INTEGER`等API來把`SEXP`轉換成正確的指標
+
+--- &vcenter .large
+
+Rcpp利用OO的技術(ex: RAII)把所有上述的動作都封裝了
+
+--- &twocol
+
+## 結果
+
+*** =left
+
+```{r integerR, dependson="integerRcpp"}
+plusRcpp(1, 2)
+```
+
+*** =right
+
+```{r integerR2}
+system("R CMD SHLIB integerC.c")
+dyn.load("integerC.so")
+.Call("plusC", 1L, 2L)
+dyn.unload("integerC.so")
+```
+
+---
+
+## 動態連結
+
+- R中可以利用動態連結做功能擴充
+- `.Call`函數讓使用者可以在R中呼叫C的函數
+- `dyn.load`把編譯好的動態函式庫載入
+
+<br/>
+
+<div class='centered'>
+**這些動作在Rcpp之中利用Rcpp Attribute都自動做完**
+</div>
+
+<br/>
+
+
+```{r, dependson="integerRcpp"}
+plusRcpp
+```
+
+--- &twocol
+
+## Rcpp物件
+
+*** =left
+
+### R ==> C++
+
+```{r r2cpp, engine='Rcpp'}
+#include <Rcpp.h>
+
+//[[Rcpp::export]]
+void RToCpp(SEXP Rsrc) {
+  Rcpp::IntegerVector src(Rsrc);
+  int sum = 0;
+  for(int i = 0;i < src.size();i++) {
+    sum += src[i];
+  }
+  Rcpp::Rcout << sum << std::endl;
+}
+```
+
+```{r, dependson="r2cpp"}
+RToCpp(1:10)
+```
+
+*** =right
+
+### C++ ==> R
+
+```{r cpp2r, engine='Rcpp'}
+#include <Rcpp.h>
+
+//[[Rcpp::export]]
+SEXP CppToR() {
+  Rcpp::IntegerVector retval(10);
+  for(int i = 0;i < 9;i++) retval[i] = i;
+  return retval;
+}
+```
+
+```{r, dependson="cpp2r"}
+CppToR()
+```
+
+--- &twocol
+
+## 和STL的轉換
+
+*** =left
+
+### R => STL: `as`
+
+```{r r2stl, engine='Rcpp'}
+#include <Rcpp.h>
+
+//[[Rcpp::export]]
+void sumSTL(SEXP Rsrc) {
+  typedef std::vector<double> NumVec;
+  NumVec src(Rcpp::as<NumVec>(Rsrc));
+  Rcpp::Rcout << std::accumulate(
+    src.begin(), 
+    src.end(), 0.0) << std::endl;
+}
+```
+
+```{r, dependson="r2stl"}
+sumSTL(1:10)
+```
+
+*** =right
+
+### STL => R: `wrap`
+
+```{r stl2r, engine='Rcpp'}
+#include <Rcpp.h>
+typedef std::vector<double> NumVec;
+typedef std::map<std::string, NumVec> Dict;
+
+//[[Rcpp::export]]
+SEXP STLToR() {
+  Dict retval;
+  for(int i = 0;i < 10;i++) 
+    retval["test"].push_back(i);
+  return Rcpp::wrap<Dict>(retval);
+}
+```
+
+```{r, dependson='stl2r'}
+STLToR()
+```
+
+--- &twocol
+
+## 函數
+
+*** =left
+
+```{r function, engine='Rcpp'}
+#include <Rcpp.h>
+
+//[[Rcpp::export]]
+SEXP fInCpp(SEXP input) {
+  Rcpp::Function f("f");
+  return f(input);
+}
+```
+
+*** =right
+
+```{r, dependson='function'}
+f <- function(x) x + 1
+fInCpp(1)
+f <- function(x) x + 2
+fInCpp(1)
+```
+
+f 的形態：
+
+```
+SEXP f(SEXP, ...);
+```
+
+--- .segue .dark
+
+## 將C++物件直接轉換為R物件
+
+--- &twocol
+
+## Rcpp Modules
+
+- 能夠將C++物件連同內部資料直接暴露在R之中直接作操作
+
+*** =left
+
+### C++ 物件
+
+```{r GeometryCpp, engine='Rcpp'}
+struct Rectangle {
+  double width;
+  double height;
+  double area() const {
+    return width * height;
+  }
+};
+
+#include <Rcpp.h>
+
+RCPP_MODULE(Geometry) {
+  Rcpp::class_<Rectangle>("Rectangle")
+    .constructor()
+    .field("width", &Rectangle::width)
+    .field("height", &Rectangle::height)
+    .method("area", &Rectangle::area)
+    ;
+}
+```
+
+*** =right
+
+### R 中的物件
+
+```{r, dependson='GeometryCpp'}
+Rectangle
+```
+
+---
+
+## 可以利用R的OO語法建立物件
+
+```{r, dependson='GeometryCpp'}
+r <- new(Rectangle)
+r$width
+r$width <- 10
+r$width
+r$height <- 20
+r$area()
+```
+
+--- .segue .dark
+
+## 前置知識建立完畢！讓我們開Hack吧
+
+--- &vcenter .large
+
+Logistic Regression
+
+$$P( y | x ) = \frac{1}{1 + e^{- y w^T x}}$$
+
+### $y$: 有沒有點擊
+### $x$: 相關參數
+### $w \in \mathbb{R}^d$: 模型
+
+--- &vcenter .large
+
+手上有這些資料
+
+$$(y_1, x_1), (y_2, x_2), ...(y_n, x_n)$$
+
+--- &vcenter .large
+
+Regularized Loss:
+
+$$f(w) = \frac{1}{2} w^T w + C \sum_{i=1}^n {log(1 + e^{-y_i w^T x_i})}$$
+
+### 定出 $(y_1, x_1), ...$ 之後，
+### 理想的模型 $w$ 是讓 $f$ 最小的點
+
+--- &vcenter .large
+
+Hessian矩陣很大 $\nabla^2 f(w) \in \mathbb{R}^{n \times n}$
+
+但是可以改寫成
+
+$$I_n + CX^T D X$$
+
+--- &vcenter .large
+
+只要算 Hessian和vector的乘積 
+
+我們不需要知道Hessian就可以找$w$
+
+--- &vcenter .large
+
+## LIBLINEAR 原始碼中的 `tron.h`
+
+```{r tron, engine='Rcpp', eval=FALSE}
+class TRON
+{
+public:
+  TRON(const function *fun_obj, double eps = 0.1, int max_iter = 1000);
+	~TRON();
+
+	void tron(double *w);
+	void set_print_string(void (*i_print) (const char *buf));
+
+private:
+	//...
+};
+```
+
+- LIBLINEAR實作了上述概念
+- TRON是最佳化的核心
+- TRON沒有牽涉到資料，甚至沒有牽涉到Loss Function `f`
+- `*fun_obj`提供了一個界面
+
+--- &vcenter .large
+
+## 界面：`function`
+
+```{r function_interface, engine='Rcpp', eval=FALSE}
+class function
+{
+public:
+  virtual double fun(double *w) = 0 ;
+	virtual void grad(double *w, double *g) = 0 ;
+	virtual void Hv(double *s, double *Hs) = 0 ;
+
+	virtual int get_nr_variable(void) = 0 ;
+	virtual ~function(void){}
+};
+```
+
+- `fun`: $f(w)$
+- `grad`: $\nabla f(w)$, `g`是輸出
+- `Hv`: $\nabla^2 f(w) s$, `Hs`是輸出, `w`是上一個呼叫`grad`的`w`
+- `get_nr_variable`: `w`的長度
+
+--- &twocol
+
+## 把`function`暴露到R中
+
+*** =left
+
+### 實作Rfunction
+
+```{r Rfunction, engine='Rcpp', eval=FALSE}
+class Rfunction : public ::function {
+  Rcpp::Function _fun, _grad, _Hv;
+  Rcpp::NumericVector _w, _s;
+  
+  Rfunction(SEXP fun, SEXP grad, SEXP Hv, int n) 
+  : _fun(fun), _grad(grad), _Hv(Hv), _w(n), _s(n) { }
+  
+  //...
+};
+
+SEXP tron//...
+```
+
+*** =right
+
+將Rfunction暴露出來
+
+```{r Rfunction_module, engine='Rcpp', eval=FALSE}
+RCPP_MODULE(HsTrust) {  
+	class_<Rfunction>("HsTrust")
+	.constructor<SEXP, SEXP, SEXP, int>()
+	.property("n", &Rfunction::get_nr_variable, 
+    "Number of parameters")
+	.method("tron", &tron)
+	.method("tron_with_begin", 
+    &tron_with_begin)
+	;	
+}
+```
+
+--- &twocol
+
+*** =left
+
+## 實作的結果
+
+- [HsTrust](https://bitbucket.org/wush978/largescalelogisticregression/src/4daf9c5bba5cd0e4f35afd813866e6da72ca92bb/?at=hstrust) 套件
+
+### 安裝
+
+```{r, eval=FALSE}
+library(devtools)
+install_bitbucket(
+  repo="largescalelogisticregression", 
+  username="wush978", ref="hstrust")
+```
+
+*** =right
+
+### 使用
+
+```{r, eval = FALSE}
+library(HsTrust)
+
+set.seed(1)
+beta <- rnorm(1)
+n <- 1
+fun <- function(w) 
+  sum((w-beta)^4)
+
+grad <- function(w)
+	4 * (w-beta)^3
+
+Hs <- function(w, s) 
+  12 * (w-beta)^2 * s
+
+obj <- new(HsTrust, fun, grad, Hs, n)
+print(r <- obj$tron(1e-4, TRUE))
+```
+
+---
+
+## 結果
+
+```{r, echo = FALSE}
+library(HsTrust)
+
+beta <- 6
+n <- 1
+fun <- function(w) 
+  sum((w-beta)^4)
+
+grad <- function(w)
+  4 * (w-beta)^3
+
+Hs <- function(w, s) 
+  12 * (w-beta)^2 * s
+
+obj <- new(HsTrust, fun, grad, Hs, n)
+print(r <- obj$tron(1e-4, TRUE))
+```
